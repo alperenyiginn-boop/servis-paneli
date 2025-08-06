@@ -89,18 +89,20 @@ async function startApp() {
 // --- VERİ YÖNETİMİ ---
 async function loadAllDataFromSupabase() {
     showToast('Veriler yükleniyor...');
-    const [customersResult, stockResult] = await Promise.all([
+    const [customersResult, stockResult, servicesResult] = await Promise.all([
         supabase.from('customers').select('*'),
-        supabase.from('stock').select('*')
+        supabase.from('stock').select('*'),
+        supabase.from('services').select('*')
     ]);
-    const { data: customersData, error: customersError } = customersResult;
-    const { data: stockData, error: stockError } = stockResult;
 
-    if (customersError) { console.error('Müşteri Yükleme Hatası:', customersError); showToast('Müşteriler yüklenemedi!', true); }
-    else { DB.customers = customersData || []; }
+    DB.customers = customersResult.data || [];
+    if (customersResult.error) { console.error('Müşteri Yükleme Hatası:', customersResult.error); showToast('Müşteriler yüklenemedi!', true); }
+    
+    DB.stock = stockResult.data || [];
+    if (stockResult.error) { console.error('Stok Yükleme Hatası:', stockResult.error); showToast('Stoklar yüklenemedi!', true); }
 
-    if (stockError) { console.error('Stok Yükleme Hatası:', stockError); showToast('Stoklar yüklenemedi!', true); }
-    else { DB.stock = stockData || []; }
+    DB.services = servicesResult.data || [];
+    if (servicesResult.error) { console.error('Servis Yükleme Hatası:', servicesResult.error); showToast('Servisler yüklenemedi!', true); }
 
     loadLegacyData();
     showToast('Veriler yüklendi!');
@@ -110,18 +112,16 @@ function loadLegacyData() {
     const data = localStorage.getItem('motorcycleServiceDB');
     const defaultData = {
         settings: { companyName: 'Servis Paneli', phone: '', address: '', logo: '', technicians: ['Usta Ali'], servicePrefix: 'SRV', lastServiceNumber: 0, orderStatuses: ['Bekleniyor', 'Tedarik Ediliyor', 'Teslim Edildi'] },
-        services: [], sales: [], orders: [], plugins: []
+        sales: [], orders: [], plugins: []
     };
     if (data) {
         const savedDB = JSON.parse(data);
         DB.settings = { ...defaultData.settings, ...savedDB.settings };
-        DB.services = savedDB.services || [];
         DB.sales = savedDB.sales || [];
         DB.orders = savedDB.orders || [];
         DB.plugins = savedDB.plugins || [];
     } else {
         DB.settings = defaultData.settings;
-        DB.services = defaultData.services;
         DB.sales = defaultData.sales;
         DB.orders = defaultData.orders;
         DB.plugins = defaultData.plugins;
@@ -132,7 +132,6 @@ function loadLegacyData() {
 function saveLegacyDB() {
     const legacyData = {
         settings: DB.settings,
-        services: DB.services,
         sales: DB.sales,
         orders: DB.orders,
         plugins: DB.plugins
@@ -151,7 +150,7 @@ function generateId() { return Date.now().toString(36) + Math.random().toString(
 function generateServiceNumber() { DB.settings.lastServiceNumber++; const p = DB.settings.servicePrefix || 'SRV'; return `${p}-${DB.settings.lastServiceNumber.toString().padStart(4, '0')}`; }
 function showToast(message, isError = false) { toast.textContent = message; toast.className = `fixed bottom-5 right-5 text-white py-2 px-4 rounded-lg shadow-lg transition-all duration-300 ease-out z-50 transform ${isError ? 'bg-red-500' : 'bg-green-500'}`; requestAnimationFrame(() => { toast.classList.remove('translate-y-20', 'opacity-0'); }); setTimeout(() => { toast.classList.add('translate-y-20', 'opacity-0'); }, 3000); }
 
-// --- ROUTING ---
+// --- ROUTING & MODALS ---
 function navigate(path) {
     Object.values(charts).forEach(c => c.destroy()); charts = {};
     const cleanPath = path.startsWith('#') ? path.substring(1) : path;
@@ -163,8 +162,6 @@ function navigate(path) {
     content.innerHTML = '';
     renderFunction();
 }
-
-// --- MODALS ---
 function openModal(id) { document.getElementById(id)?.classList.add('active'); }
 function closeModal(id) { document.getElementById(id)?.classList.remove('active'); }
 function createModal(id, title, contentHtml, onSave, large = false, saveText = 'Kaydet') {
@@ -184,17 +181,23 @@ function showConfirmModal(title, message, onConfirm) {
 
 // --- SAYFA RENDER FONKSİYONLARI ---
 
-// Müşteriler (Customers) - SUPABASE'E UYARLANDI
+// Müşteriler (Customers) - SUPABASE
 async function renderCustomers(searchTerm = '') { /* ... Önceki koddan ... */ }
 async function showCustomerModal(customerId = null) { /* ... Önceki koddan ... */ }
 async function deleteCustomer(customerId) { /* ... Önceki koddan ... */ }
 async function showMotorcycleModal(customerId) { /* ... Önceki koddan ... */ }
 function showCustomerHistory(customerId) { /* ... Önceki koddan ... */ }
 
-// Stok Yönetimi (Stock) - SUPABASE'E UYARLANDI
+// Stok Yönetimi (Stock) - SUPABASE
 function renderStock(filters = {}) { /* ... Önceki koddan ... */ }
 async function showStockModal(itemId = null) { /* ... Önceki koddan ... */ }
 async function deleteStockItem(itemId) { /* ... Önceki koddan ... */ }
+
+// Servis Yönetimi (Services) - SUPABASE
+function renderServices(searchTerm = '') { /* ... Önceki koddan ... */ }
+async function showServiceModal(serviceId = null) { /* ... Önceki koddan ... */ }
+async function deleteService(serviceId) { /* ... Önceki koddan ... */ }
+
 
 // --- ESKİ (LEGACY) FONKSİYONLAR ---
 // Bu fonksiyonlar hala localStorage kullanıyor ve sırayla Supabase'e taşınacak.
@@ -202,25 +205,26 @@ async function deleteStockItem(itemId) { /* ... Önceki koddan ... */ }
 function renderDashboard() {
     const today = new Date().toISOString().split('T')[0];
     const currentMonth = today.substring(0, 7);
-    const activeServices = DB.services.filter(s => ['beklemede', 'islemde'].includes(s.status)).length;
-    const totalCustomers = DB.customers.length; // Bu artık Supabase'den geliyor!
+    const activeServices = (DB.services || []).filter(s => ['Beklemede', 'İşlemde'].includes(s.status)).length;
+    const totalCustomers = (DB.customers || []).length;
     const getRevenue = (filterFn) => {
-        const serviceRevenue = DB.services.filter(s => (s.status === 'tamamlandi' || s.status === 'teslim_edildi') && s.completionDate && filterFn(s.completionDate)).reduce((sum, s) => sum + (s.totalPrice || 0), 0);
-        const posRevenue = DB.sales.filter(s => s.date && filterFn(s.date)).reduce((sum, s) => sum + s.total, 0);
+        const serviceRevenue = (DB.services || []).filter(s => (s.status === 'Tamamlandı' || s.status === 'Teslim Edildi') && s.completion_date && filterFn(s.completion_date)).reduce((sum, s) => sum + (s.total_price || 0), 0);
+        const posRevenue = (DB.sales || []).filter(s => s.date && filterFn(s.date)).reduce((sum, s) => sum + s.total, 0);
         return serviceRevenue + posRevenue;
     };
     const dailyRevenue = getRevenue(date => date.startsWith(today));
     const monthlyRevenue = getRevenue(date => date.startsWith(currentMonth));
-    const lowStockItems = DB.stock.filter(item => item.quantity <= (item.criticalStock || 5)); // Bu da Supabase'den
+    const lowStockItems = (DB.stock || []).filter(item => item.quantity <= (item.criticalStock || 5));
     content.innerHTML = `<h1 class="text-3xl font-bold mb-6">Ana Panel</h1><div id="dashboard-widgets" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8"><div class="bg-white p-6 rounded-lg shadow-md flex items-center"><i class="fas fa-tools text-3xl text-orange-500 mr-4"></i><div><div class="text-gray-500">Aktif Servis</div><div class="text-3xl font-bold">${activeServices}</div></div></div><div class="bg-white p-6 rounded-lg shadow-md flex items-center"><i class="fas fa-users text-3xl text-green-500 mr-4"></i><div><div class="text-gray-500">Toplam Müşteri</div><div class="text-3xl font-bold">${totalCustomers}</div></div></div><div class="bg-white p-6 rounded-lg shadow-md flex items-center"><i class="fas fa-lira-sign text-3xl text-yellow-500 mr-4"></i><div><div class="text-gray-500">Günlük Ciro</div><div class="text-3xl font-bold">${dailyRevenue.toFixed(2)} ₺</div></div></div><div class="bg-white p-6 rounded-lg shadow-md flex items-center"><i class="fas fa-calendar-alt text-3xl text-red-500 mr-4"></i><div><div class="text-gray-500">Aylık Ciro</div><div class="text-3xl font-bold">${monthlyRevenue.toFixed(2)} ₺</div></div></div></div><div class="bg-white p-6 rounded-lg shadow-md"><h2 class="text-xl font-bold mb-4">Kritik Stok Seviyesindeki Ürünler</h2><div class="overflow-x-auto"><table class="w-full text-left"><thead><tr class="bg-gray-100"><th class="p-3">Parça Adı</th><th class="p-3">Stok Kodu</th><th class="p-3">Kalan Miktar</th></tr></thead><tbody>${lowStockItems.length > 0 ? lowStockItems.map(item => `<tr class="border-b"><td class="p-3">${item.name}</td><td class="p-3">${item.stockCode}</td><td class="p-3 font-bold text-red-600">${item.quantity}</td></tr>`).join('') : '<tr><td colspan="3" class="p-3 text-center text-gray-500">Kritik seviyede ürün bulunmuyor.</td></tr>'}</tbody></table></div></div>`;
 }
+
 function renderPOS(lastSaleId = null) { /* ... Eski kod ... */ }
 function renderInventoryCount() { /* ... Eski kod ... */ }
-function renderServices(searchTerm = '') { /* ... Eski kod ... */ }
 function renderOrders(searchTerm = '') { /* ... Eski kod ... */ }
 function renderReports() { /* ... Eski kod ... */ }
 function renderPlugins() { /* ... Eski kod ... */ }
 function renderSettings() { /* ... Eski kod ... */ }
+
 function loadPlugins() {
     if (!DB.plugins || !Array.isArray(DB.plugins)) { DB.plugins = []; }
     DB.plugins.forEach(plugin => {
@@ -235,7 +239,6 @@ function loadPlugins() {
     });
     PluginHost.trigger('plugins_loaded');
 }
-
 
 // --- UYGULAMAYI BAŞLAT ---
 handleAuthStateChange();
