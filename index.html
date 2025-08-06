@@ -3,101 +3,71 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Motosiklet Servis Yönetim Paneli</title>
-
-    <!-- External Libraries (CDN) -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/pdf-lib/dist/pdf-lib.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-    <link rel="stylesheet" href="https://rsms.me/inter/inter.css">
-
-    <!-- Your Custom Stylesheet -->
+    <title>Motosiklet Servis Paneli</title>
+    
+    <!-- Harici CSS Dosyası -->
     <link rel="stylesheet" href="style.css">
-</head>
-<body class="bg-slate-100 text-gray-800">
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    
+    <!-- Chart.js for reports -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <!-- jsPDF for creating PDFs -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
-    <!-- Login Screen -->
-    <div id="auth-screen" class="flex items-center justify-center h-screen">
-        <!-- Bu bölüm script.js tarafından doldurulacak -->
+</head>
+<body class="bg-gray-100">
+
+    <!-- Auth Screen: Shown when user is not logged in -->
+    <div id="auth-screen" class="min-h-screen flex items-center justify-center bg-gray-200">
+        <!-- Login/Signup form will be rendered here by JS -->
     </div>
 
-    <!-- Main App (Initially Hidden) -->
-    <div id="app" class="hidden h-screen">
-        <!-- Sidebar Navigation -->
-        <aside class="w-64 bg-slate-800 text-white flex flex-col p-4 fixed h-full">
-            <div class="text-2xl font-bold mb-8 text-center flex items-center justify-center text-orange-400">
-                <i class="fas fa-motorcycle mr-2"></i>
-                <span id="sidebar-company-name">Servis Paneli</span>
+    <!-- Main App Container: Shown after successful login -->
+    <div id="app" class="hidden h-screen w-full">
+        <!-- Sidebar -->
+        <aside class="w-64 bg-slate-800 text-white flex flex-col shadow-lg">
+            <div class="p-5 border-b border-slate-700 text-center">
+                <i class="fas fa-motorcycle text-3xl text-orange-400"></i>
+                <h1 id="sidebar-company-name" class="text-xl font-bold mt-2">Servis Paneli</h1>
             </div>
-            <nav id="sidebar-nav" class="flex-grow">
-                <a href="#dashboard" class="nav-link flex items-center py-3 px-4 rounded-lg transition-all duration-200 hover:bg-slate-700">
-                    <i class="fas fa-tachometer-alt w-6"></i><span class="ml-3">Ana Panel</span>
-                </a>
-                <a href="#pos" class="nav-link flex items-center py-3 px-4 rounded-lg transition-all duration-200 hover:bg-slate-700">
-                    <i class="fas fa-cash-register w-6"></i><span class="ml-3">Hızlı Satış (POS)</span>
-                </a>
-                <a href="#customers" class="nav-link flex items-center py-3 px-4 rounded-lg transition-all duration-200 hover:bg-slate-700">
-                    <i class="fas fa-users w-6"></i><span class="ml-3">Müşteriler</span>
-                </a>
-                <a href="#stock" class="nav-link flex items-center py-3 px-4 rounded-lg transition-all duration-200 hover:bg-slate-700">
-                    <i class="fas fa-boxes w-6"></i><span class="ml-3">Stok Yönetimi</span>
-                </a>
-                <a href="#inventory-count" class="nav-link flex items-center py-3 px-4 rounded-lg transition-all duration-200 hover:bg-slate-700">
-                    <i class="fas fa-tasks w-6"></i><span class="ml-3">Stok Sayımı</span>
-                </a>
-                <a href="#services" class="nav-link flex items-center py-3 px-4 rounded-lg transition-all duration-200 hover:bg-slate-700">
-                    <i class="fas fa-tools w-6"></i><span class="ml-3">Servis Kayıtları</span>
-                </a>
-                 <a href="#orders" class="nav-link flex items-center py-3 px-4 rounded-lg transition-all duration-200 hover:bg-slate-700">
-                    <i class="fas fa-shipping-fast w-6"></i><span class="ml-3">Sipariş Takibi</span>
-                </a>
-                <a href="#reports" class="nav-link flex items-center py-3 px-4 rounded-lg transition-all duration-200 hover:bg-slate-700">
-                    <i class="fas fa-chart-line w-6"></i><span class="ml-3">Raporlama</span>
-                </a>
-                <!-- PLUGIN: Navigation Link Hook -->
-                <div id="plugin-nav-links"></div> 
-                <a href="#plugins" class="nav-link flex items-center py-3 px-4 rounded-lg transition-all duration-200 hover:bg-slate-700">
-                    <i class="fas fa-puzzle-piece w-6"></i><span class="ml-3">Eklentiler</span>
-                </a>
-                <a href="#settings" class="nav-link flex items-center py-3 px-4 rounded-lg transition-all duration-200 hover:bg-slate-700">
-                    <i class="fas fa-cog w-6"></i><span class="ml-3">Ayarlar</span>
-                </a>
+            <nav id="sidebar-menu" class="flex-grow overflow-y-auto">
+                <a href="#dashboard" class="nav-link flex items-center py-3 px-5 hover:bg-slate-700 transition-colors duration-200"><i class="fas fa-tachometer-alt w-8 text-center"></i> Gösterge Paneli</a>
+                <a href="#services" class="nav-link flex items-center py-3 px-5 hover:bg-slate-700 transition-colors duration-200"><i class="fas fa-tools w-8 text-center"></i> Servis Yönetimi</a>
+                <a href="#customers" class="nav-link flex items-center py-3 px-5 hover:bg-slate-700 transition-colors duration-200"><i class="fas fa-users w-8 text-center"></i> Müşteriler</a>
+                <a href="#stock" class="nav-link flex items-center py-3 px-5 hover:bg-slate-700 transition-colors duration-200"><i class="fas fa-box-open w-8 text-center"></i> Stok Yönetimi</a>
+                <a href="#orders" class="nav-link flex items-center py-3 px-5 hover:bg-slate-700 transition-colors duration-200"><i class="fas fa-truck-loading w-8 text-center"></i> Siparişler</a>
+                <a href="#inventory-count" class="nav-link flex items-center py-3 px-5 hover:bg-slate-700 transition-colors duration-200"><i class="fas fa-clipboard-check w-8 text-center"></i> Stok Sayımı</a>
+                <a href="#reports" class="nav-link flex items-center py-3 px-5 hover:bg-slate-700 transition-colors duration-200"><i class="fas fa-chart-pie w-8 text-center"></i> Raporlar</a>
+                <a href="#plugins" class="nav-link flex items-center py-3 px-5 hover:bg-slate-700 transition-colors duration-200"><i class="fas fa-puzzle-piece w-8 text-center"></i> Eklentiler</a>
+                <a href="#settings" class="nav-link flex items-center py-3 px-5 hover:bg-slate-700 transition-colors duration-200"><i class="fas fa-cog w-8 text-center"></i> Ayarlar</a>
             </nav>
-            <div class="mt-auto">
-                <div id="user-info" class="text-center text-xs text-gray-400 mb-4 p-2 border-t border-b border-slate-700">
-                    <!-- Kullanıcı bilgisi buraya gelecek -->
-                </div>
-                <button id="logoutBtn" class="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg mb-2 flex items-center justify-center">
+            <div class="p-5 border-t border-slate-700">
+                <div id="user-info" class="text-sm mb-3"></div>
+                <button id="logoutBtn" class="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg flex items-center justify-center">
                     <i class="fas fa-sign-out-alt mr-2"></i> Çıkış Yap
                 </button>
             </div>
         </aside>
 
         <!-- Main Content -->
-        <main class="flex-1 ml-64 p-8 overflow-y-auto">
-            <!-- Dynamic Content Area -->
-            <div id="content"></div>
+        <main id="content" class="flex-1 p-8 overflow-y-auto bg-gray-200">
+            <!-- Page content will be rendered here by JS -->
         </main>
     </div>
 
-    <!-- Modals will be injected here -->
+    <!-- Modal Container -->
     <div id="modal-container"></div>
     
     <!-- Toast Notification -->
-    <div id="toast" class="fixed bottom-5 right-5 bg-green-500 text-white py-2 px-4 rounded-lg shadow-lg transition-transform transform translate-y-20 opacity-0 duration-300 ease-out z-50">
-        İşlem başarılı!
-    </div>
-    
-    <!-- PDF Template container -->
-    <div id="pdf-container"></div>
+    <div id="toast" class="fixed bottom-5 right-5 text-white py-2 px-4 rounded-lg shadow-lg transition-all duration-300 ease-out z-50"></div>
 
-    <!-- Your Application Logic -->
-    <script type="module" src="script.js"></script>
-
+    <!-- Harici JavaScript Dosyası -->
+    <script src="script.js" type="module"></script>
 </body>
 </html>
