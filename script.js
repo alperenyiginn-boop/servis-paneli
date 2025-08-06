@@ -18,7 +18,8 @@ const toast = document.getElementById('toast');
 const { jsPDF } = window.jspdf;
 let charts = {};
 let DB = {
-    customers: [], stock: [], services: [], orders: [], plugins: [], settings: {}
+    customers: [], stock: [], services: [], orders: [], plugins: [], 
+    settings: { technicians: [], motorcycle_data: [], order_statuses: [] }
 };
 
 // --- KULLANICI GİRİŞ (AUTHENTICATION) FONKSİYONLARI ---
@@ -109,7 +110,29 @@ async function loadAllDataFromSupabase() {
     if (ordersResult.error) { console.error('Sipariş Yükleme Hatası:', ordersResult.error); showToast('Siparişler yüklenemedi!', true); }
 
     DB.settings = settingsResult.data || {};
-    if (settingsResult.error && settingsResult.error.code !== 'PGRST116') { console.error('Ayarlar Yükleme Hatası:', settingsResult.error); showToast('Ayarlar yüklenemedi!', true); }
+    if (settingsResult.error && settingsResult.error.code !== 'PGRST116') { 
+        console.error('Ayarlar Yükleme Hatası:', settingsResult.error); 
+        showToast('Ayarlar yüklenemedi!', true); 
+    }
+    
+    // JSON olarak saklanan ayarları parse et
+    try {
+        DB.settings.technicians = typeof DB.settings.technicians === 'string' ? JSON.parse(DB.settings.technicians) : (DB.settings.technicians || []);
+    } catch (e) {
+        console.error("Teknisyen verisi ayrıştırılamadı:", e);
+        DB.settings.technicians = [];
+    }
+     try {
+        DB.settings.motorcycle_data = typeof DB.settings.motorcycle_data === 'string' ? JSON.parse(DB.settings.motorcycle_data) : (DB.settings.motorcycle_data || []);
+    } catch (e) {
+        console.error("Motosiklet verisi ayrıştırılamadı:", e);
+        DB.settings.motorcycle_data = [];
+    }
+    // order_statuses zaten bir array olarak gelmeli, değilse varsayılan ata
+    if (!Array.isArray(DB.settings.order_statuses)) {
+        DB.settings.order_statuses = ['Sipariş Verildi', 'Teslim Alındı', 'İptal Edildi'];
+    }
+
 
     loadLegacyData();
     document.getElementById('sidebar-company-name').textContent = DB.settings.company_name || 'Servis Paneli';
@@ -191,7 +214,7 @@ function renderCustomers(searchTerm = '') {
     document.querySelectorAll('.view-customer-history-btn').forEach(btn => btn.onclick = (e) => showCustomerHistory(e.currentTarget.closest('tr').dataset.id));
 }
 async function showCustomerModal(customerId = null) {
-    const customer = customerId ? DB.customers.find(c => c.id === customerId) : null;
+    const customer = customerId ? DB.customers.find(c => c.id.toString() === customerId) : null;
     const title = customer ? 'Müşteri Düzenle' : 'Yeni Müşteri Ekle';
     const modalContent = `<form id="customerForm" class="space-y-4"><div><label for="customerName" class="block font-bold">Ad Soyad:</label><input type="text" id="customerName" class="w-full p-2 border rounded" required value="${customer ? customer.name : ''}"></div><div><label for="customerPhone" class="block font-bold">Telefon:</label><input type="tel" id="customerPhone" class="w-full p-2 border rounded" value="${customer ? customer.phone : ''}"></div><div><label for="customerAddress" class="block font-bold">Adres:</label><textarea id="customerAddress" class="w-full p-2 border rounded">${customer ? (customer.address || '') : ''}</textarea></div></form>`;
     createModal('customerModal', title, modalContent, async (modalId) => {
@@ -210,9 +233,30 @@ async function deleteCustomer(customerId) {
     });
 }
 async function showMotorcycleModal(customerId) {
-    const customer = DB.customers.find(c => c.id === customerId);
+    const customer = DB.customers.find(c => c.id.toString() === customerId);
+    if (!customer) {
+        showToast('Müşteri bulunamadı!', true);
+        return;
+    }
     const title = `${customer.name} için Yeni Motor Ekle`;
-    const modalContent = `<form id="motorcycleForm" class="space-y-4"><div><label class="block font-bold">Plaka:</label><input type="text" id="motorcyclePlate" class="w-full p-2 border rounded" required></div><div><label class="block font-bold">Şasi No:</label><input type="text" id="motorcycleChassis" class="w-full p-2 border rounded"></div><div><label class="block font-bold">Marka / Model:</label><input type="text" id="motorcycleModel" class="w-full p-2 border rounded"></div></form>`;
+    const modalContent = `
+        <form id="motorcycleForm" class="space-y-4">
+            <div>
+                <label class="block font-bold">Plaka:</label>
+                <input type="text" id="motorcyclePlate" class="w-full p-2 border rounded" required>
+            </div>
+            <div>
+                <label class="block font-bold">Şasi No:</label>
+                <input type="text" id="motorcycleChassis" class="w-full p-2 border rounded">
+            </div>
+            <div>
+                <label class="block font-bold">Marka / Model:</label>
+                <input type="text" id="motorcycleModel" class="w-full p-2 border rounded" list="motorcycle-models-list">
+                <datalist id="motorcycle-models-list">
+                    ${(DB.settings.motorcycle_data || []).map(m => `<option value="${m}"></option>`).join('')}
+                </datalist>
+            </div>
+        </form>`;
     createModal('motorcycleModal', title, modalContent, async (modalId) => {
         const form = document.getElementById('motorcycleForm'); if (!form.checkValidity()) { form.reportValidity(); return; }
         const newMotorcycle = { id: generateId(), plate: form.motorcyclePlate.value.toUpperCase(), chassis: form.motorcycleChassis.value, model: form.motorcycleModel.value };
@@ -222,8 +266,12 @@ async function showMotorcycleModal(customerId) {
     });
 }
 function showCustomerHistory(customerId) {
-    const customer = DB.customers.find(c => c.id === customerId);
-    const customerServices = DB.services.filter(s => s.customer_id === customerId);
+    const customer = DB.customers.find(c => c.id.toString() === customerId);
+    if (!customer) {
+        showToast('Müşteri bulunamadı!', true);
+        return;
+    }
+    const customerServices = DB.services.filter(s => s.customer_id.toString() === customerId);
     let historyContent = `<h2 class="text-xl font-bold mb-4">Servis Geçmişi</h2>`;
     if (customerServices.length > 0) {
         historyContent += customerServices.map(s => {
@@ -247,7 +295,7 @@ function renderStock(filters = {}) {
     document.querySelectorAll('.delete-stock-btn').forEach(btn => btn.onclick = e => deleteStockItem(e.currentTarget.closest('tr').dataset.id));
 }
 async function showStockModal(itemId = null) {
-    const item = itemId ? DB.stock.find(i => i.id === itemId) : null;
+    const item = itemId ? DB.stock.find(i => i.id.toString() === itemId) : null;
     const title = item ? 'Ürün Düzenle' : 'Yeni Ürün Ekle';
     const modalContent = `<form id="stockForm" class="space-y-4"><div class="grid grid-cols-1 md:grid-cols-2 gap-4"><div><label class="block font-bold">Parça Adı:</label><input type="text" id="itemName" class="w-full p-2 border rounded" required value="${item ? item.name : ''}"></div><div><label class="block font-bold">Stok Kodu:</label><input type="text" id="itemStockCode" class="w-full p-2 border rounded" required value="${item ? item.stockCode : ''}"></div><div><label class="block font-bold">Miktar:</label><input type="number" id="itemQuantity" class="w-full p-2 border rounded" required min="0" value="${item ? item.quantity : '0'}"></div><div><label class="block font-bold">Satış Fiyatı (₺):</label><input type="number" id="itemSalePrice" class="w-full p-2 border rounded" required min="0" step="0.01" value="${item ? (item.salePrice || '') : ''}"></div></div></form>`;
     createModal('stockModal', title, modalContent, async (modalId) => {
@@ -334,7 +382,7 @@ function renderServices(searchTerm = '') {
 }
 
 async function showServiceModal(serviceId = null) {
-    const service = serviceId ? DB.services.find(s => s.id === serviceId) : null;
+    const service = serviceId ? DB.services.find(s => s.id.toString() === serviceId) : null;
     const title = service ? `Servis Düzenle: ${service.service_number}` : 'Yeni Servis Kaydı';
 
     let currentParts = service ? service.parts_used || [] : [];
@@ -364,6 +412,13 @@ async function showServiceModal(serviceId = null) {
                         <option ${service?.status === 'Tamamlandı' ? 'selected' : ''}>Tamamlandı</option>
                         <option ${service?.status === 'Teslim Edildi' ? 'selected' : ''}>Teslim Edildi</option>
                         <option ${service?.status === 'İptal Edildi' ? 'selected' : ''}>İptal Edildi</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block font-bold">Teknisyen:</label>
+                    <select id="serviceTechnician" class="w-full p-2 border rounded">
+                        <option value="">Teknisyen Seçin...</option>
+                        ${(DB.settings.technicians || []).map(t => `<option value="${t.name}" ${service && service.technician_name === t.name ? 'selected' : ''}>${t.name}</option>`).join('')}
                     </select>
                 </div>
             </div>
@@ -443,7 +498,8 @@ async function showServiceModal(serviceId = null) {
             notes: form.serviceNotes.value,
             parts_used: currentParts,
             actions_performed: currentActions,
-            total_price: total_price
+            total_price: total_price,
+            technician_name: form.serviceTechnician.value
         };
 
         let error;
@@ -482,7 +538,7 @@ async function showServiceModal(serviceId = null) {
 
     const updateMotorcycleOptions = () => {
         const customerId = customerSelect.value;
-        const customer = DB.customers.find(c => c.id === customerId);
+        const customer = DB.customers.find(c => c.id.toString() === customerId);
         motorcycleSelect.innerHTML = '<option value="">Motosiklet Seçin...</option>';
         if (customer && customer.motorcycles) {
             motorcycleSelect.disabled = false;
@@ -638,7 +694,7 @@ function renderOrders(searchTerm = '') {
 }
 
 async function showOrderModal(orderId = null) {
-    const order = orderId ? DB.orders.find(o => o.id === orderId) : null;
+    const order = orderId ? DB.orders.find(o => o.id.toString() === orderId) : null;
     const title = order ? 'Sipariş Düzenle' : 'Yeni Sipariş Oluştur';
     let currentItems = order ? order.items || [] : [];
 
@@ -649,9 +705,7 @@ async function showOrderModal(orderId = null) {
                 <div><label class="block font-bold">Tedarikçi:</label><input type="text" id="orderSupplier" class="w-full p-2 border rounded" value="${order ? order.supplier || '' : ''}"></div>
                 <div><label class="block font-bold">Durum:</label>
                      <select id="orderStatus" class="w-full p-2 border rounded">
-                        <option ${order?.status === 'Sipariş Verildi' ? 'selected' : ''}>Sipariş Verildi</option>
-                        <option ${order?.status === 'Teslim Alındı' ? 'selected' : ''}>Teslim Alındı</option>
-                        <option ${order?.status === 'İptal Edildi' ? 'selected' : ''}>İptal Edildi</option>
+                        ${(DB.settings.order_statuses || []).map(status => `<option ${order?.status === status ? 'selected' : ''}>${status}</option>`).join('')}
                     </select>
                 </div>
             </div>
@@ -687,9 +741,9 @@ async function showOrderModal(orderId = null) {
             showToast('Hata: ' + error.message, true);
         } else {
             // Eğer sipariş teslim alındıysa, stokları güncelle
-            if (orderData.status === 'Teslim Alındı') {
+            if (orderData.status === 'Teslim Alındı' || orderData.status === 'Stoğa Ulaştı') {
                 for (const item of currentItems) {
-                    const stockItem = DB.stock.find(s => s.id === item.stock_id);
+                    const stockItem = DB.stock.find(s => s.id.toString() === item.stock_id);
                     if (stockItem) {
                         const newQuantity = stockItem.quantity + item.quantity;
                         await supabase.from('stock').update({ quantity: newQuantity }).eq('id', item.stock_id);
@@ -715,7 +769,7 @@ async function showOrderModal(orderId = null) {
                 <div class="col-span-5">
                     <select class="order-item-select w-full p-2 border rounded">
                         <option value="">Stok Ürünü Seç</option>
-                        ${DB.stock.map(s => `<option value="${s.id}" ${s.id === item.stock_id ? 'selected' : ''}>${s.name}</option>`).join('')}
+                        ${DB.stock.map(s => `<option value="${s.id}" ${s.id.toString() === item.stock_id ? 'selected' : ''}>${s.name}</option>`).join('')}
                     </select>
                 </div>
                 <div class="col-span-3"><input type="number" class="order-item-quantity w-full p-2 border rounded" value="${item.quantity}" min="1"></div>
@@ -763,27 +817,80 @@ async function renderSettings() {
     const settings = DB.settings || {};
     content.innerHTML = `
         <h1 class="text-3xl font-bold mb-6">Ayarlar</h1>
-        <div class="bg-white p-8 rounded-lg shadow-md max-w-3xl mx-auto">
-            <form id="settingsForm" class="space-y-6">
-                <div>
-                    <label for="company_name" class="block text-sm font-medium text-gray-700">Firma Adı</label>
-                    <input type="text" id="company_name" value="${settings.company_name || ''}" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-orange-500 focus:border-orange-500">
+        <div class="bg-white p-8 rounded-lg shadow-md max-w-4xl mx-auto">
+            <form id="settingsForm" class="space-y-8">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                        <label for="company_name" class="block text-sm font-medium text-gray-700">Firma Adı</label>
+                        <input type="text" id="company_name" value="${settings.company_name || ''}" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-orange-500 focus:border-orange-500">
+                    </div>
+                    <div>
+                        <label for="service_prefix" class="block text-sm font-medium text-gray-700">Servis Numarası Ön Eki</label>
+                        <input type="text" id="service_prefix" value="${settings.service_prefix || 'SRV'}" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-orange-500 focus:border-orange-500">
+                    </div>
+                    <div class="md:col-span-2">
+                        <label for="company_address" class="block text-sm font-medium text-gray-700">Adres</label>
+                        <textarea id="company_address" rows="3" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-orange-500 focus:border-orange-500">${settings.company_address || ''}</textarea>
+                    </div>
                 </div>
-                <div>
-                    <label for="company_address" class="block text-sm font-medium text-gray-700">Adres</label>
-                    <textarea id="company_address" rows="3" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-orange-500 focus:border-orange-500">${settings.company_address || ''}</textarea>
-                </div>
-                <div>
-                    <label for="service_prefix" class="block text-sm font-medium text-gray-700">Servis Numarası Ön Eki</label>
-                    <input type="text" id="service_prefix" value="${settings.service_prefix || 'SRV'}" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-orange-500 focus:border-orange-500">
-                </div>
-                <div class="text-right">
+
+                <!-- Teknisyen Yönetimi -->
+                <div id="technicians-manager"></div>
+
+                <!-- Motosiklet Veri Yönetimi -->
+                <div id="motorcycle-data-manager"></div>
+
+                <div class="text-right pt-4 border-t">
                     <button type="submit" class="bg-orange-600 text-white font-bold py-2 px-6 rounded-lg hover:bg-orange-700">
                         Ayarları Kaydet
                     </button>
                 </div>
             </form>
         </div>`;
+        
+    // Dinamik liste yöneticisi fonksiyonu
+    const createListManager = (containerId, title, placeholder, list) => {
+        const container = document.getElementById(containerId);
+        const render = () => {
+            container.innerHTML = `
+                <div class="border p-4 rounded-lg">
+                    <h3 class="font-bold mb-2">${title}</h3>
+                    <div class="flex gap-2 mb-3">
+                        <input type="text" placeholder="${placeholder}" class="new-item-input flex-grow p-2 border rounded">
+                        <button type="button" class="add-item-btn bg-blue-500 text-white px-4 rounded hover:bg-blue-600">Ekle</button>
+                    </div>
+                    <div class="item-list flex flex-wrap gap-2">
+                        ${list.map((item, index) => `
+                            <div class="bg-gray-200 text-gray-800 px-3 py-1 rounded-full flex items-center gap-2">
+                                <span>${typeof item === 'object' ? item.name : item}</span>
+                                <button type="button" class="remove-item-btn text-red-500 hover:text-red-700" data-index="${index}">&times;</button>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>`;
+            
+            container.querySelector('.add-item-btn').onclick = () => {
+                const input = container.querySelector('.new-item-input');
+                if (input.value.trim()) {
+                    const newItem = title === 'Teknisyenler' ? { name: input.value.trim() } : input.value.trim();
+                    list.push(newItem);
+                    input.value = '';
+                    render();
+                }
+            };
+            
+            container.querySelectorAll('.remove-item-btn').forEach(btn => {
+                btn.onclick = () => {
+                    list.splice(btn.dataset.index, 1);
+                    render();
+                };
+            });
+        };
+        render();
+    };
+
+    createListManager('technicians-manager', 'Teknisyenler', 'Yeni teknisyen adı...', DB.settings.technicians || []);
+    createListManager('motorcycle-data-manager', 'Motosiklet Marka/Modelleri', 'Yeni marka/model...', DB.settings.motorcycle_data || []);
 
     document.getElementById('settingsForm').addEventListener('submit', async (e) => {
         e.preventDefault();
@@ -792,6 +899,8 @@ async function renderSettings() {
             company_name: document.getElementById('company_name').value,
             company_address: document.getElementById('company_address').value,
             service_prefix: document.getElementById('service_prefix').value,
+            technicians: JSON.stringify(DB.settings.technicians),
+            motorcycle_data: JSON.stringify(DB.settings.motorcycle_data)
         };
         const { error } = await supabase.from('settings').upsert(updatedSettings);
         if (error) {
