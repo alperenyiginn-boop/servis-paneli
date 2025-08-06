@@ -1,32 +1,82 @@
-/* Custom styles for the application */
-body { 
-    font-family: 'Inter', sans-serif; 
+/* Custom styles for a better look and feel */
+body {
+    font-family: 'Inter', sans-serif;
 }
 
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap');
-
-/* Modal styles */
-.modal { 
-    display: none; 
-}
-.modal.active { 
-    display: flex; 
+.modal {
+    display: none; /* Hidden by default */
 }
 
-/* Toast notification initial state */
-#toast {
-    transform: translateY(120px);
-    opacity: 0;
+.modal.active {
+    display: flex; /* Show when active */
 }
 
-/* Sidebar scrollbar styling */
-#sidebar-menu::-webkit-scrollbar { 
-    width: 4px; 
+/* Custom scrollbar for better aesthetics */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
 }
-#sidebar-menu::-webkit-scrollbar-track { 
-    background: #2d3748; 
+
+::-webkit-scrollbar-track {
+    background: #f1f1f1;
 }
-#sidebar-menu::-webkit-scrollbar-thumb { 
-    background: #4a5568; 
-    border-radius: 4px; 
+
+::-webkit-scrollbar-thumb {
+    background: #888;
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: #555;
+}
+
+/* Style for disabled buttons */
+button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* Additional style for clickable plates */
+.plate-details {
+    display: none;
+    font-size: 0.75rem;
+    background-color: #fff7ed;
+    color: #9a3412;
+    padding: 4px 8px;
+    border-radius: 4px;
+}
+
+/* Styles for PDF rendering template */
+#pdf-template, #pos-receipt-template {
+    position: absolute;
+    left: -9999px;
+    top: auto;
+    background: white;
+    color: black;
+}
+
+#pdf-template {
+    width: 210mm; /* A4 width */
+    font-family: 'Inter', sans-serif;
+}
+
+#pos-receipt-template {
+    width: 80mm; /* Thermal printer width */
+    font-family: 'monospace';
+}
+
+/* Plugin code editor style */
+#pluginCode {
+    font-family: 'Courier New', Courier, monospace;
+    min-height: 40vh;
+}
+
+/* Toggle switch style */
+.plugin-toggle-switch:checked ~ .dot {
+    transform: translateX(100%);
+    background-color: #f97316; /* orange-500 */
+}
+
+.plugin-toggle-switch:checked ~ .block {
+    background-color: #fed7aa; /* orange-200 */
 }
