@@ -267,24 +267,827 @@ async function deleteStockItem(itemId) {
 }
 
 // Servis Yönetimi (Services)
-function renderServices(searchTerm = '') { /* ... Tam kod ... */ }
-async function showServiceModal(serviceId = null) { /* ... Tam kod ... */ }
-async function deleteService(serviceId) { /* ... Tam kod ... */ }
+function renderServices(searchTerm = '') {
+    const filteredServices = (DB.services || []).filter(s => {
+        const customer = DB.customers.find(c => c.id === s.customer_id);
+        const term = searchTerm.toLowerCase();
+        return s.service_number.toLowerCase().includes(term) ||
+               (customer && customer.name.toLowerCase().includes(term)) ||
+               s.status.toLowerCase().includes(term);
+    });
+
+    const statusColors = {
+        'Yeni': 'bg-blue-200 text-blue-800',
+        'İşlemde': 'bg-yellow-200 text-yellow-800',
+        'Tamamlandı': 'bg-green-200 text-green-800',
+        'Teslim Edildi': 'bg-gray-200 text-gray-800',
+        'İptal Edildi': 'bg-red-200 text-red-800'
+    };
+
+    content.innerHTML = `
+        <div class="flex justify-between items-center mb-6">
+            <h1 class="text-3xl font-bold">Servis Kayıtları</h1>
+            <button id="addServiceBtn" class="bg-orange-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-orange-700 flex items-center">
+                <i class="fas fa-plus mr-2"></i> Yeni Servis Kaydı
+            </button>
+        </div>
+        <input type="text" id="serviceSearch" placeholder="Servis no, müşteri adı veya durum ile ara..." class="w-full p-3 border rounded-lg mb-4" value="${searchTerm}">
+        <div class="bg-white rounded-lg shadow-md overflow-x-auto">
+            <table class="w-full">
+                <thead class="bg-gray-100">
+                    <tr>
+                        <th class="p-4 text-left">Servis No</th>
+                        <th class="p-4 text-left">Müşteri</th>
+                        <th class="p-4 text-left">Plaka</th>
+                        <th class="p-4 text-left">Durum</th>
+                        <th class="p-4 text-left">Tutar</th>
+                        <th class="p-4 text-left">Tarih</th>
+                        <th class="p-4 text-left min-w-[150px]">İşlemler</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${filteredServices.length > 0 ? filteredServices.map(s => {
+                        const customer = DB.customers.find(c => c.id === s.customer_id);
+                        const motorcycle = customer ? (customer.motorcycles || []).find(m => m.id === s.motorcycle_id) : null;
+                        return `
+                        <tr class="border-b hover:bg-gray-50" data-id="${s.id}">
+                            <td class="p-4 font-bold text-orange-600">${s.service_number}</td>
+                            <td class="p-4">${customer ? customer.name : 'Bilinmiyor'}</td>
+                            <td class="p-4"><span class="bg-gray-200 px-2 py-1 rounded-full text-xs">${motorcycle ? motorcycle.plate : 'Bilinmiyor'}</span></td>
+                            <td class="p-4"><span class="px-2 py-1 rounded-full text-xs font-semibold ${statusColors[s.status] || 'bg-gray-200'}">${s.status}</span></td>
+                            <td class="p-4">${(s.total_price || 0).toFixed(2)} ₺</td>
+                            <td class="p-4">${new Date(s.created_at).toLocaleDateString('tr-TR')}</td>
+                            <td class="p-4">
+                                <button class="edit-service-btn text-orange-600 hover:text-orange-800 mr-3" title="Düzenle"><i class="fas fa-edit"></i></button>
+                                <button class="delete-service-btn text-red-600 hover:text-red-800" title="Sil"><i class="fas fa-trash"></i></button>
+                            </td>
+                        </tr>`;
+                    }).join('') : `<tr><td colspan="7" class="text-center p-8 text-gray-500">Servis kaydı bulunamadı.</td></tr>`}
+                </tbody>
+            </table>
+        </div>`;
+
+    document.getElementById('serviceSearch').addEventListener('input', (e) => renderServices(e.target.value));
+    document.getElementById('addServiceBtn').onclick = () => showServiceModal();
+    document.querySelectorAll('.edit-service-btn').forEach(btn => btn.onclick = (e) => showServiceModal(e.currentTarget.closest('tr').dataset.id));
+    document.querySelectorAll('.delete-service-btn').forEach(btn => btn.onclick = (e) => deleteService(e.currentTarget.closest('tr').dataset.id));
+}
+
+async function showServiceModal(serviceId = null) {
+    const service = serviceId ? DB.services.find(s => s.id === serviceId) : null;
+    const title = service ? `Servis Düzenle: ${service.service_number}` : 'Yeni Servis Kaydı';
+
+    let currentParts = service ? service.parts_used || [] : [];
+    let currentActions = service ? service.actions_performed || [] : [];
+
+    const getModalContent = () => `
+        <form id="serviceForm" class="space-y-6">
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                <div>
+                    <label class="block font-bold">Müşteri:</label>
+                    <select id="serviceCustomer" class="w-full p-2 border rounded" required>
+                        <option value="">Müşteri Seçin...</option>
+                        ${DB.customers.map(c => `<option value="${c.id}" ${service && service.customer_id === c.id ? 'selected' : ''}>${c.name}</option>`).join('')}
+                    </select>
+                </div>
+                <div>
+                    <label class="block font-bold">Motosiklet:</label>
+                    <select id="serviceMotorcycle" class="w-full p-2 border rounded" required ${!service ? 'disabled' : ''}>
+                        <option value="">Önce Müşteri Seçin...</option>
+                    </select>
+                </div>
+                 <div>
+                    <label class="block font-bold">Durum:</label>
+                    <select id="serviceStatus" class="w-full p-2 border rounded" required>
+                        <option ${service?.status === 'Yeni' ? 'selected' : ''}>Yeni</option>
+                        <option ${service?.status === 'İşlemde' ? 'selected' : ''}>İşlemde</option>
+                        <option ${service?.status === 'Tamamlandı' ? 'selected' : ''}>Tamamlandı</option>
+                        <option ${service?.status === 'Teslim Edildi' ? 'selected' : ''}>Teslim Edildi</option>
+                        <option ${service?.status === 'İptal Edildi' ? 'selected' : ''}>İptal Edildi</option>
+                    </select>
+                </div>
+            </div>
+            <div>
+                <label class="block font-bold">Müşteri Şikayeti / Talebi:</label>
+                <textarea id="serviceComplaint" class="w-full p-2 border rounded" rows="3">${service ? service.complaint || '' : ''}</textarea>
+            </div>
+
+            <!-- Kullanılan Parçalar -->
+            <div class="border p-4 rounded-lg">
+                <h4 class="font-bold mb-2">Kullanılan Parçalar</h4>
+                <div class="flex items-end gap-2 mb-2">
+                    <div class="flex-grow">
+                        <label class="text-sm">Parça Seç:</label>
+                        <select id="partSelector" class="w-full p-2 border rounded">
+                            <option value="">Stoktan Parça Seçin...</option>
+                            ${DB.stock.map(p => `<option value="${p.id}" data-price="${p.salePrice}" data-name="${p.name}">${p.name} (${p.stockCode}) - Stok: ${p.quantity}</option>`).join('')}
+                        </select>
+                    </div>
+                    <div><label class="text-sm">Adet:</label><input type="number" id="partQuantity" value="1" min="1" class="w-24 p-2 border rounded"></div>
+                    <button type="button" id="addPartBtn" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">Ekle</button>
+                </div>
+                <table class="w-full text-sm">
+                    <thead class="bg-gray-100"><tr><th class="p-2 text-left">Parça</th><th class="p-2 text-left">Adet</th><th class="p-2 text-left">Birim Fiyat</th><th class="p-2 text-left">Toplam</th><th class="p-2"></th></tr></thead>
+                    <tbody id="partsList">
+                        ${currentParts.map(p => `
+                            <tr data-part-id="${p.id}">
+                                <td class="p-2">${p.name}</td>
+                                <td class="p-2">${p.quantity}</td>
+                                <td class="p-2">${p.price.toFixed(2)} ₺</td>
+                                <td class="p-2">${(p.quantity * p.price).toFixed(2)} ₺</td>
+                                <td class="p-2 text-center"><button type="button" class="remove-part-btn text-red-500"><i class="fas fa-times"></i></button></td>
+                            </tr>`).join('')}
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Yapılan İşlemler -->
+            <div class="border p-4 rounded-lg">
+                <h4 class="font-bold mb-2">Yapılan İşlemler / İşçilik</h4>
+                <div class="flex items-end gap-2 mb-2">
+                    <div class="flex-grow"><label class="text-sm">Açıklama:</label><input type="text" id="actionDescription" class="w-full p-2 border rounded"></div>
+                    <div><label class="text-sm">Ücret (₺):</label><input type="number" id="actionPrice" value="0" min="0" step="10" class="w-32 p-2 border rounded"></div>
+                    <button type="button" id="addActionBtn" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">Ekle</button>
+                </div>
+                <table class="w-full text-sm">
+                     <thead class="bg-gray-100"><tr><th class="p-2 text-left">Açıklama</th><th class="p-2 text-left">Ücret</th><th class="p-2"></th></tr></thead>
+                    <tbody id="actionsList">
+                        ${currentActions.map(a => `
+                            <tr>
+                                <td class="p-2">${a.description}</td>
+                                <td class="p-2">${a.price.toFixed(2)} ₺</td>
+                                <td class="p-2 text-center"><button type="button" class="remove-action-btn text-red-500"><i class="fas fa-times"></i></button></td>
+                            </tr>`).join('')}
+                    </tbody>
+                </table>
+            </div>
+             <div>
+                <label class="block font-bold">Teknisyen Notları:</label>
+                <textarea id="serviceNotes" class="w-full p-2 border rounded" rows="3">${service ? service.notes || '' : ''}</textarea>
+            </div>
+            <div class="text-right font-bold text-2xl" id="totalPriceDisplay">Toplam: 0.00 ₺</div>
+        </form>
+    `;
+
+    createModal('serviceModal', title, getModalContent(), async (modalId) => {
+        const form = document.getElementById('serviceForm');
+        if (!form.checkValidity()) { form.reportValidity(); return; }
+
+        const total_price = currentParts.reduce((sum, p) => sum + (p.quantity * p.price), 0) + currentActions.reduce((sum, a) => sum + a.price, 0);
+
+        const serviceData = {
+            customer_id: form.serviceCustomer.value,
+            motorcycle_id: form.serviceMotorcycle.value,
+            status: form.serviceStatus.value,
+            complaint: form.serviceComplaint.value,
+            notes: form.serviceNotes.value,
+            parts_used: currentParts,
+            actions_performed: currentActions,
+            total_price: total_price
+        };
+
+        let error;
+        if (service) {
+            const { error: updateError } = await supabase.from('services').update(serviceData).eq('id', serviceId);
+            error = updateError;
+        } else {
+            serviceData.service_number = await generateServiceNumber();
+            const { error: insertError } = await supabase.from('services').insert([serviceData]);
+            error = insertError;
+        }
+
+        if (error) {
+            showToast('Hata: ' + error.message, true);
+        } else {
+            // Stoktan düşme işlemi (sadece tamamlandı veya teslim edildi durumunda)
+            if (['Tamamlandı', 'Teslim Edildi'].includes(serviceData.status)) {
+                for (const part of currentParts) {
+                    const stockItem = DB.stock.find(i => i.id === part.id);
+                    if (stockItem) {
+                        const newQuantity = stockItem.quantity - part.quantity;
+                        await supabase.from('stock').update({ quantity: newQuantity }).eq('id', part.id);
+                    }
+                }
+            }
+            showToast('Servis kaydı başarıyla kaydedildi!');
+            closeModal(modalId);
+            await loadAllDataFromSupabase();
+            renderServices();
+        }
+    }, true, 'Kaydet');
+
+    // --- Modal içi event listener'lar ---
+    const customerSelect = document.getElementById('serviceCustomer');
+    const motorcycleSelect = document.getElementById('serviceMotorcycle');
+
+    const updateMotorcycleOptions = () => {
+        const customerId = customerSelect.value;
+        const customer = DB.customers.find(c => c.id === customerId);
+        motorcycleSelect.innerHTML = '<option value="">Motosiklet Seçin...</option>';
+        if (customer && customer.motorcycles) {
+            motorcycleSelect.disabled = false;
+            motorcycleSelect.innerHTML += customer.motorcycles.map(m => `<option value="${m.id}">${m.plate} - ${m.model}</option>`).join('');
+        } else {
+            motorcycleSelect.disabled = true;
+        }
+    };
+
+    const updateTotal = () => {
+        const partsTotal = currentParts.reduce((sum, p) => sum + (p.quantity * p.price), 0);
+        const actionsTotal = currentActions.reduce((sum, a) => sum + a.price, 0);
+        document.getElementById('totalPriceDisplay').textContent = `Toplam: ${(partsTotal + actionsTotal).toFixed(2)} ₺`;
+    };
+
+    const updateLists = () => {
+        const partsList = document.getElementById('partsList');
+        partsList.innerHTML = currentParts.map(p => `
+            <tr data-part-id="${p.id}">
+                <td class="p-2">${p.name}</td>
+                <td class="p-2">${p.quantity}</td>
+                <td class="p-2">${p.price.toFixed(2)} ₺</td>
+                <td class="p-2">${(p.quantity * p.price).toFixed(2)} ₺</td>
+                <td class="p-2 text-center"><button type="button" class="remove-part-btn text-red-500"><i class="fas fa-times"></i></button></td>
+            </tr>`).join('');
+        
+        const actionsList = document.getElementById('actionsList');
+        actionsList.innerHTML = currentActions.map(a => `
+            <tr>
+                <td class="p-2">${a.description}</td>
+                <td class="p-2">${a.price.toFixed(2)} ₺</td>
+                <td class="p-2 text-center"><button type="button" class="remove-action-btn text-red-500"><i class="fas fa-times"></i></button></td>
+            </tr>`).join('');
+
+        document.querySelectorAll('.remove-part-btn').forEach(btn => btn.onclick = (e) => {
+            const partId = e.currentTarget.closest('tr').dataset.partId;
+            currentParts = currentParts.filter(p => p.id !== partId);
+            updateLists();
+        });
+        document.querySelectorAll('.remove-action-btn').forEach(btn => btn.onclick = (e) => {
+            const description = e.currentTarget.closest('tr').children[0].textContent;
+            currentActions = currentActions.filter(a => a.description !== description);
+            updateLists();
+        });
+        updateTotal();
+    };
+    
+    document.getElementById('addPartBtn').onclick = () => {
+        const selector = document.getElementById('partSelector');
+        const selectedOption = selector.options[selector.selectedIndex];
+        if (!selectedOption.value) return;
+
+        const partId = selectedOption.value;
+        const quantity = parseInt(document.getElementById('partQuantity').value);
+        if (isNaN(quantity) || quantity <= 0) return;
+
+        const existingPart = currentParts.find(p => p.id === partId);
+        if (existingPart) {
+            existingPart.quantity += quantity;
+        } else {
+            currentParts.push({
+                id: partId,
+                name: selectedOption.dataset.name,
+                price: parseFloat(selectedOption.dataset.price),
+                quantity: quantity
+            });
+        }
+        updateLists();
+    };
+    
+    document.getElementById('addActionBtn').onclick = () => {
+        const description = document.getElementById('actionDescription').value;
+        const price = parseFloat(document.getElementById('actionPrice').value);
+        if (!description || isNaN(price)) return;
+        currentActions.push({ description, price });
+        document.getElementById('actionDescription').value = '';
+        document.getElementById('actionPrice').value = 0;
+        updateLists();
+    };
+
+    customerSelect.onchange = updateMotorcycleOptions;
+
+    // Initial population if editing
+    if (service) {
+        updateMotorcycleOptions();
+        motorcycleSelect.value = service.motorcycle_id;
+    }
+    updateLists();
+}
+
+async function deleteService(serviceId) {
+    showConfirmModal('Servis Kaydını Sil', 'Bu servis kaydını kalıcı olarak silmek istediğinize emin misiniz? Bu işlem geri alınamaz.', async () => {
+        const { error } = await supabase.from('services').delete().eq('id', serviceId);
+        if (error) {
+            showToast('Hata: ' + error.message, true);
+        } else {
+            showToast('Servis kaydı silindi.', true);
+            await loadAllDataFromSupabase();
+            renderServices();
+        }
+    });
+}
 
 // Sipariş Yönetimi (Orders)
-function renderOrders(searchTerm = '') { /* ... Tam kod ... */ }
-async function showOrderModal(orderId = null) { /* ... Tam kod ... */ }
-async function deleteOrder(orderId) { /* ... Tam kod ... */ }
+function renderOrders(searchTerm = '') {
+    const filteredOrders = (DB.orders || []).filter(o => 
+        (o.supplier && o.supplier.toLowerCase().includes(searchTerm.toLowerCase())) ||
+        (o.order_number && o.order_number.toLowerCase().includes(searchTerm.toLowerCase()))
+    );
+
+    content.innerHTML = `
+        <div class="flex justify-between items-center mb-6">
+            <h1 class="text-3xl font-bold">Malzeme Siparişleri</h1>
+            <button id="addOrderBtn" class="bg-orange-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-orange-700 flex items-center">
+                <i class="fas fa-plus mr-2"></i> Yeni Sipariş Oluştur
+            </button>
+        </div>
+        <input type="text" id="orderSearch" placeholder="Sipariş no veya tedarikçi ile ara..." class="w-full p-3 border rounded-lg mb-4" value="${searchTerm}">
+        <div class="bg-white rounded-lg shadow-md overflow-x-auto">
+            <table class="w-full">
+                <thead class="bg-gray-100">
+                    <tr>
+                        <th class="p-4 text-left">Sipariş No</th>
+                        <th class="p-4 text-left">Tedarikçi</th>
+                        <th class="p-4 text-left">Tarih</th>
+                        <th class="p-4 text-left">Durum</th>
+                        <th class="p-4 text-left">Toplam Tutar</th>
+                        <th class="p-4 text-left min-w-[150px]">İşlemler</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${filteredOrders.length > 0 ? filteredOrders.map(o => `
+                        <tr class="border-b hover:bg-gray-50" data-id="${o.id}">
+                            <td class="p-4 font-bold">${o.order_number || '-'}</td>
+                            <td class="p-4">${o.supplier || '-'}</td>
+                            <td class="p-4">${new Date(o.created_at).toLocaleDateString('tr-TR')}</td>
+                            <td class="p-4">${o.status || 'Bilinmiyor'}</td>
+                            <td class="p-4">${(o.total_cost || 0).toFixed(2)} ₺</td>
+                            <td class="p-4">
+                                <button class="edit-order-btn text-orange-600 hover:text-orange-800 mr-3" title="Düzenle"><i class="fas fa-edit"></i></button>
+                                <button class="delete-order-btn text-red-600 hover:text-red-800" title="Sil"><i class="fas fa-trash"></i></button>
+                            </td>
+                        </tr>
+                    `).join('') : `<tr><td colspan="6" class="text-center p-8 text-gray-500">Sipariş bulunamadı.</td></tr>`}
+                </tbody>
+            </table>
+        </div>`;
+
+    document.getElementById('orderSearch').addEventListener('input', (e) => renderOrders(e.target.value));
+    document.getElementById('addOrderBtn').onclick = () => showOrderModal();
+    document.querySelectorAll('.edit-order-btn').forEach(btn => btn.onclick = (e) => showOrderModal(e.currentTarget.closest('tr').dataset.id));
+    document.querySelectorAll('.delete-order-btn').forEach(btn => btn.onclick = (e) => deleteOrder(e.currentTarget.closest('tr').dataset.id));
+}
+
+async function showOrderModal(orderId = null) {
+    const order = orderId ? DB.orders.find(o => o.id === orderId) : null;
+    const title = order ? 'Sipariş Düzenle' : 'Yeni Sipariş Oluştur';
+    let currentItems = order ? order.items || [] : [];
+
+    const modalContent = `
+        <form id="orderForm" class="space-y-4">
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div><label class="block font-bold">Sipariş Numarası:</label><input type="text" id="orderNumber" class="w-full p-2 border rounded" value="${order ? order.order_number || '' : ''}"></div>
+                <div><label class="block font-bold">Tedarikçi:</label><input type="text" id="orderSupplier" class="w-full p-2 border rounded" value="${order ? order.supplier || '' : ''}"></div>
+                <div><label class="block font-bold">Durum:</label>
+                     <select id="orderStatus" class="w-full p-2 border rounded">
+                        <option ${order?.status === 'Sipariş Verildi' ? 'selected' : ''}>Sipariş Verildi</option>
+                        <option ${order?.status === 'Teslim Alındı' ? 'selected' : ''}>Teslim Alındı</option>
+                        <option ${order?.status === 'İptal Edildi' ? 'selected' : ''}>İptal Edildi</option>
+                    </select>
+                </div>
+            </div>
+            <div class="border p-4 rounded-lg">
+                <h4 class="font-bold mb-2">Sipariş Edilen Ürünler</h4>
+                <div id="orderItemsContainer"></div>
+                <button type="button" id="addOrderItemBtn" class="mt-2 bg-blue-500 text-white px-3 py-1 rounded text-sm hover:bg-blue-600">Ürün Ekle</button>
+            </div>
+            <div class="text-right font-bold text-xl" id="orderTotalCost">Toplam: 0.00 ₺</div>
+        </form>`;
+
+    createModal('orderModal', title, modalContent, async (modalId) => {
+        const form = document.getElementById('orderForm');
+        const total_cost = currentItems.reduce((sum, item) => sum + (item.quantity * item.cost), 0);
+        const orderData = {
+            order_number: form.orderNumber.value,
+            supplier: form.orderSupplier.value,
+            status: form.orderStatus.value,
+            items: currentItems,
+            total_cost: total_cost
+        };
+
+        let error;
+        if (order) {
+            const { error: updateError } = await supabase.from('orders').update(orderData).eq('id', orderId);
+            error = updateError;
+        } else {
+            const { error: insertError } = await supabase.from('orders').insert([orderData]);
+            error = insertError;
+        }
+
+        if (error) {
+            showToast('Hata: ' + error.message, true);
+        } else {
+            // Eğer sipariş teslim alındıysa, stokları güncelle
+            if (orderData.status === 'Teslim Alındı') {
+                for (const item of currentItems) {
+                    const stockItem = DB.stock.find(s => s.id === item.stock_id);
+                    if (stockItem) {
+                        const newQuantity = stockItem.quantity + item.quantity;
+                        await supabase.from('stock').update({ quantity: newQuantity }).eq('id', item.stock_id);
+                    }
+                }
+            }
+            showToast('Sipariş kaydedildi!');
+            closeModal(modalId);
+            await loadAllDataFromSupabase();
+            renderOrders();
+        }
+    }, true);
+
+    const container = document.getElementById('orderItemsContainer');
+    const updateTotal = () => {
+        const total = currentItems.reduce((sum, item) => sum + (item.quantity * item.cost), 0);
+        document.getElementById('orderTotalCost').textContent = `Toplam: ${total.toFixed(2)} ₺`;
+    };
+
+    const renderItems = () => {
+        container.innerHTML = currentItems.map((item, index) => `
+            <div class="grid grid-cols-12 gap-2 mb-2 items-center" data-index="${index}">
+                <div class="col-span-5">
+                    <select class="order-item-select w-full p-2 border rounded">
+                        <option value="">Stok Ürünü Seç</option>
+                        ${DB.stock.map(s => `<option value="${s.id}" ${s.id === item.stock_id ? 'selected' : ''}>${s.name}</option>`).join('')}
+                    </select>
+                </div>
+                <div class="col-span-3"><input type="number" class="order-item-quantity w-full p-2 border rounded" value="${item.quantity}" min="1"></div>
+                <div class="col-span-3"><input type="number" class="order-item-cost w-full p-2 border rounded" value="${item.cost}" min="0" step="0.01"></div>
+                <div class="col-span-1 text-center"><button type="button" class="remove-order-item-btn text-red-500"><i class="fas fa-trash"></i></button></div>
+            </div>
+        `).join('');
+        updateTotal();
+        addEventListenersToItems();
+    };
+
+    const addEventListenersToItems = () => {
+        document.querySelectorAll('[data-index]').forEach(row => {
+            const index = parseInt(row.dataset.index);
+            row.querySelector('.order-item-select').onchange = (e) => { currentItems[index].stock_id = e.target.value; };
+            row.querySelector('.order-item-quantity').onchange = (e) => { currentItems[index].quantity = parseInt(e.target.value); updateTotal(); };
+            row.querySelector('.order-item-cost').onchange = (e) => { currentItems[index].cost = parseFloat(e.target.value); updateTotal(); };
+            row.querySelector('.remove-order-item-btn').onclick = () => { currentItems.splice(index, 1); renderItems(); };
+        });
+    };
+
+    document.getElementById('addOrderItemBtn').onclick = () => {
+        currentItems.push({ stock_id: '', quantity: 1, cost: 0 });
+        renderItems();
+    };
+
+    renderItems();
+}
+
+async function deleteOrder(orderId) {
+    showConfirmModal('Siparişi Sil', 'Bu siparişi silmek istediğinize emin misiniz?', async () => {
+        const { error } = await supabase.from('orders').delete().eq('id', orderId);
+        if (error) {
+            showToast('Hata: ' + error.message, true);
+        } else {
+            showToast('Sipariş silindi.', true);
+            await loadAllDataFromSupabase();
+            renderOrders();
+        }
+    });
+}
 
 // Ayarlar (Settings)
-async function renderSettings() { /* ... Tam kod ... */ }
+async function renderSettings() {
+    const settings = DB.settings || {};
+    content.innerHTML = `
+        <h1 class="text-3xl font-bold mb-6">Ayarlar</h1>
+        <div class="bg-white p-8 rounded-lg shadow-md max-w-3xl mx-auto">
+            <form id="settingsForm" class="space-y-6">
+                <div>
+                    <label for="company_name" class="block text-sm font-medium text-gray-700">Firma Adı</label>
+                    <input type="text" id="company_name" value="${settings.company_name || ''}" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-orange-500 focus:border-orange-500">
+                </div>
+                <div>
+                    <label for="company_address" class="block text-sm font-medium text-gray-700">Adres</label>
+                    <textarea id="company_address" rows="3" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-orange-500 focus:border-orange-500">${settings.company_address || ''}</textarea>
+                </div>
+                <div>
+                    <label for="service_prefix" class="block text-sm font-medium text-gray-700">Servis Numarası Ön Eki</label>
+                    <input type="text" id="service_prefix" value="${settings.service_prefix || 'SRV'}" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-orange-500 focus:border-orange-500">
+                </div>
+                <div class="text-right">
+                    <button type="submit" class="bg-orange-600 text-white font-bold py-2 px-6 rounded-lg hover:bg-orange-700">
+                        Ayarları Kaydet
+                    </button>
+                </div>
+            </form>
+        </div>`;
+
+    document.getElementById('settingsForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const updatedSettings = {
+            id: 1, // Ayarlar her zaman tek bir satırda tutulur
+            company_name: document.getElementById('company_name').value,
+            company_address: document.getElementById('company_address').value,
+            service_prefix: document.getElementById('service_prefix').value,
+        };
+        const { error } = await supabase.from('settings').upsert(updatedSettings);
+        if (error) {
+            showToast('Ayarlar kaydedilemedi: ' + error.message, true);
+        } else {
+            showToast('Ayarlar başarıyla kaydedildi!');
+            await loadAllDataFromSupabase();
+        }
+    });
+}
 
 // Diğer Modüller
-function renderDashboard() { /* ... Tam kod ... */ }
-function renderInventoryCount() { /* ... Tam kod ... */ }
-function renderReports() { /* ... Tam kod ... */ }
-function renderPlugins() { /* ... Tam kod ... */ }
-function loadPlugins() { /* ... Tam kod ... */ }
+function renderDashboard() {
+    const openServices = DB.services.filter(s => s.status === 'İşlemde' || s.status === 'Yeni').length;
+    const completedToday = DB.services.filter(s => s.status === 'Tamamlandı' && new Date(s.updated_at).toDateString() === new Date().toDateString()).length;
+    const lowStockItems = DB.stock.filter(i => i.quantity <= (i.criticalStock || 5)).length;
+    const totalCustomers = DB.customers.length;
+
+    content.innerHTML = `
+        <h1 class="text-3xl font-bold mb-6">Gösterge Paneli</h1>
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            <div class="bg-white p-6 rounded-lg shadow-md flex items-center">
+                <i class="fas fa-tools text-4xl text-blue-500 mr-4"></i>
+                <div>
+                    <p class="text-gray-500">Açık Servisler</p>
+                    <p class="text-3xl font-bold">${openServices}</p>
+                </div>
+            </div>
+            <div class="bg-white p-6 rounded-lg shadow-md flex items-center">
+                <i class="fas fa-check-circle text-4xl text-green-500 mr-4"></i>
+                <div>
+                    <p class="text-gray-500">Bugün Tamamlanan</p>
+                    <p class="text-3xl font-bold">${completedToday}</p>
+                </div>
+            </div>
+            <div class="bg-white p-6 rounded-lg shadow-md flex items-center">
+                <i class="fas fa-exclamation-triangle text-4xl text-red-500 mr-4"></i>
+                <div>
+                    <p class="text-gray-500">Kritik Stok</p>
+                    <p class="text-3xl font-bold">${lowStockItems}</p>
+                </div>
+            </div>
+            <div class="bg-white p-6 rounded-lg shadow-md flex items-center">
+                <i class="fas fa-users text-4xl text-purple-500 mr-4"></i>
+                <div>
+                    <p class="text-gray-500">Toplam Müşteri</p>
+                    <p class="text-3xl font-bold">${totalCustomers}</p>
+                </div>
+            </div>
+        </div>
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
+            <div class="bg-white p-6 rounded-lg shadow-md">
+                <h2 class="text-xl font-bold mb-4">Servis Durumları</h2>
+                <canvas id="serviceStatusChart"></canvas>
+            </div>
+            <div class="bg-white p-6 rounded-lg shadow-md">
+                <h2 class="text-xl font-bold mb-4">Son 5 Servis Kaydı</h2>
+                <ul>
+                ${[...DB.services].sort((a,b) => new Date(b.created_at) - new Date(a.created_at)).slice(0, 5).map(s => {
+                    const customer = DB.customers.find(c => c.id === s.customer_id);
+                    return `<li class="border-b py-2 flex justify-between"><span>${s.service_number} - ${customer?.name || ''}</span><span class="font-semibold">${s.status}</span></li>`
+                }).join('')}
+                </ul>
+            </div>
+        </div>
+    `;
+
+    // Chart.js ile grafik oluşturma
+    const statusCounts = DB.services.reduce((acc, s) => {
+        acc[s.status] = (acc[s.status] || 0) + 1;
+        return acc;
+    }, {});
+
+    const ctx = document.getElementById('serviceStatusChart').getContext('2d');
+    charts.serviceStatus = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+            labels: Object.keys(statusCounts),
+            datasets: [{
+                data: Object.values(statusCounts),
+                backgroundColor: ['#3B82F6', '#F59E0B', '#10B981', '#6B7280', '#EF4444'],
+            }]
+        },
+        options: { responsive: true, maintainAspectRatio: false }
+    });
+}
+
+function renderInventoryCount() {
+    content.innerHTML = `
+        <div class="flex justify-between items-center mb-6">
+            <h1 class="text-3xl font-bold">Stok Sayımı</h1>
+            <button id="saveInventoryCount" class="bg-green-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-green-700">
+                <i class="fas fa-save mr-2"></i> Sayımı Kaydet
+            </button>
+        </div>
+        <div class="bg-white rounded-lg shadow-md overflow-x-auto">
+            <table class="w-full">
+                <thead class="bg-gray-100">
+                    <tr>
+                        <th class="p-4 text-left">Parça Adı</th>
+                        <th class="p-4 text-left">Stok Kodu</th>
+                        <th class="p-4 text-center">Mevcut Miktar</th>
+                        <th class="p-4 text-center">Sayılan Miktar</th>
+                    </tr>
+                </thead>
+                <tbody id="inventoryList">
+                    ${DB.stock.map(item => `
+                        <tr class="border-b" data-id="${item.id}">
+                            <td class="p-4">${item.name}</td>
+                            <td class="p-4">${item.stockCode}</td>
+                            <td class="p-4 text-center">${item.quantity}</td>
+                            <td class="p-4 text-center">
+                                <input type="number" class="inventory-count-input w-24 p-2 border rounded text-center" value="${item.quantity}">
+                            </td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+        </div>`;
+
+    document.getElementById('saveInventoryCount').onclick = async () => {
+        showConfirmModal('Stok Sayımını Kaydet', 'Mevcut stok miktarları, girdiğiniz yeni değerlerle güncellenecektir. Emin misiniz?', async () => {
+            const updates = [];
+            document.querySelectorAll('#inventoryList tr').forEach(row => {
+                const id = row.dataset.id;
+                const newQuantity = parseInt(row.querySelector('.inventory-count-input').value);
+                if (!isNaN(newQuantity)) {
+                    updates.push({ id: id, quantity: newQuantity });
+                }
+            });
+
+            const { error } = await supabase.from('stock').upsert(updates);
+            if (error) {
+                showToast('Stok güncellenemedi: ' + error.message, true);
+            } else {
+                showToast('Stok sayımı başarıyla kaydedildi!');
+                await loadAllDataFromSupabase();
+                renderInventoryCount();
+            }
+        });
+    };
+}
+
+function renderReports() {
+    content.innerHTML = `
+        <h1 class="text-3xl font-bold mb-6">Raporlar</h1>
+        <div class="bg-white p-8 rounded-lg shadow-md">
+            <h2 class="text-xl font-bold mb-4">Servis Gelir Raporu</h2>
+            <div class="flex items-end gap-4 mb-4">
+                <div><label>Başlangıç Tarihi:</label><input type="date" id="startDate" class="w-full p-2 border rounded"></div>
+                <div><label>Bitiş Tarihi:</label><input type="date" id="endDate" class="w-full p-2 border rounded"></div>
+                <button id="generateReportBtn" class="bg-blue-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-blue-700">Rapor Oluştur</button>
+            </div>
+            <div id="reportResult" class="mt-6"></div>
+        </div>`;
+
+    document.getElementById('generateReportBtn').onclick = () => {
+        const startDate = new Date(document.getElementById('startDate').value);
+        const endDate = new Date(document.getElementById('endDate').value);
+        endDate.setHours(23, 59, 59, 999); // Bitiş tarihini gün sonuna ayarla
+
+        if (isNaN(startDate) || isNaN(endDate)) {
+            showToast('Lütfen geçerli tarihler seçin.', true);
+            return;
+        }
+
+        const filteredServices = DB.services.filter(s => {
+            const serviceDate = new Date(s.created_at);
+            return s.status === 'Tamamlandı' || s.status === 'Teslim Edildi' &&
+                   serviceDate >= startDate && serviceDate <= endDate;
+        });
+
+        const totalRevenue = filteredServices.reduce((sum, s) => sum + (s.total_price || 0), 0);
+        const reportResult = document.getElementById('reportResult');
+        reportResult.innerHTML = `
+            <h3 class="font-bold text-lg">Rapor Sonucu (${startDate.toLocaleDateString()} - ${endDate.toLocaleDateString()})</h3>
+            <p>Toplam Tamamlanan Servis: <span class="font-bold">${filteredServices.length}</span></p>
+            <p>Toplam Gelir: <span class="font-bold text-green-600">${totalRevenue.toFixed(2)} ₺</span></p>
+            <button id="exportPdfBtn" class="mt-4 bg-red-600 text-white py-2 px-4 rounded-lg hover:bg-red-700">PDF Olarak İndir</button>
+            <table class="w-full mt-4 text-sm">
+                <thead class="bg-gray-100"><tr><th class="p-2 text-left">Servis No</th><th class="p-2 text-left">Müşteri</th><th class="p-2 text-left">Tarih</th><th class="p-2 text-right">Tutar</th></tr></thead>
+                <tbody>
+                    ${filteredServices.map(s => {
+                        const customer = DB.customers.find(c => c.id === s.customer_id);
+                        return `<tr><td class="p-2 border-b">${s.service_number}</td><td class="p-2 border-b">${customer?.name}</td><td class="p-2 border-b">${new Date(s.created_at).toLocaleDateString()}</td><td class="p-2 border-b text-right">${(s.total_price || 0).toFixed(2)} ₺</td></tr>`
+                    }).join('')}
+                </tbody>
+            </table>`;
+        
+        document.getElementById('exportPdfBtn').onclick = () => {
+            const doc = new jsPDF();
+            doc.text(`Servis Gelir Raporu (${startDate.toLocaleDateString()} - ${endDate.toLocaleDateString()})`, 14, 16);
+            doc.autoTable({
+                startY: 22,
+                head: [['Servis No', 'Musteri', 'Tarih', 'Tutar']],
+                body: filteredServices.map(s => {
+                    const customer = DB.customers.find(c => c.id === s.customer_id);
+                    return [s.service_number, customer?.name, new Date(s.created_at).toLocaleDateString(), `${(s.total_price || 0).toFixed(2)} TL`];
+                }),
+            });
+            doc.text(`Toplam Gelir: ${totalRevenue.toFixed(2)} TL`, 14, doc.autoTable.previous.finalY + 10);
+            doc.save(`rapor-${Date.now()}.pdf`);
+        };
+    };
+}
+
+function renderPlugins() {
+    content.innerHTML = `
+        <div class="flex justify-between items-center mb-6">
+            <h1 class="text-3xl font-bold">Eklentiler</h1>
+            <button id="addPluginBtn" class="bg-orange-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-orange-700">
+                <i class="fas fa-plus mr-2"></i> Yeni Eklenti Ekle
+            </button>
+        </div>
+        <div class="bg-white rounded-lg shadow-md p-6">
+            <p class="text-gray-600 mb-4">Eklentiler, panele yeni özellikler eklemek için kullanılabilir. (Bu özellik localStorage kullanır.)</p>
+            <div id="pluginList" class="space-y-4">
+                ${DB.plugins.map((plugin, index) => `
+                    <div class="border p-4 rounded-lg flex justify-between items-start" data-index="${index}">
+                        <div>
+                            <h3 class="font-bold">${plugin.name || 'İsimsiz Eklenti'}</h3>
+                            <p class="text-sm text-gray-500">${plugin.description || 'Açıklama yok.'}</p>
+                            <label class="mt-2 inline-flex items-center cursor-pointer">
+                                <input type="checkbox" class="plugin-enabled-toggle sr-only peer" ${plugin.enabled ? 'checked' : ''}>
+                                <div class="relative w-11 h-6 bg-gray-200 rounded-full peer peer-focus:ring-4 peer-focus:ring-orange-300 dark:peer-focus:ring-orange-800 dark:bg-gray-700 peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-orange-600"></div>
+                                <span class="ms-3 text-sm font-medium text-gray-900">Aktif</span>
+                            </label>
+                        </div>
+                        <button class="delete-plugin-btn text-red-500 hover:text-red-700"><i class="fas fa-trash"></i></button>
+                    </div>
+                `).join('') || '<p class="text-center text-gray-500">Yüklü eklenti bulunmuyor.</p>'}
+            </div>
+        </div>
+    `;
+
+    document.getElementById('addPluginBtn').onclick = () => {
+        const modalContent = `
+            <form id="pluginForm" class="space-y-4">
+                <div><label class="block font-bold">Eklenti Adı:</label><input type="text" id="pluginName" class="w-full p-2 border rounded"></div>
+                <div><label class="block font-bold">Açıklama:</label><input type="text" id="pluginDesc" class="w-full p-2 border rounded"></div>
+                <div><label class="block font-bold">Eklenti Kodu (JavaScript):</label><textarea id="pluginCode" class="w-full p-2 border rounded font-mono" rows="10"></textarea></div>
+            </form>`;
+        createModal('pluginModal', 'Yeni Eklenti Ekle', modalContent, () => {
+            const newPlugin = {
+                id: generateId(),
+                name: document.getElementById('pluginName').value,
+                description: document.getElementById('pluginDesc').value,
+                code: document.getElementById('pluginCode').value,
+                enabled: true
+            };
+            DB.plugins.push(newPlugin);
+            saveLegacyDB();
+            showToast('Eklenti eklendi. Değişikliklerin etkili olması için sayfayı yenileyin.');
+            closeModal('pluginModal');
+            renderPlugins();
+        }, true);
+    };
+
+    document.querySelectorAll('.delete-plugin-btn').forEach(btn => {
+        btn.onclick = (e) => {
+            const index = e.currentTarget.closest('[data-index]').dataset.index;
+            showConfirmModal('Eklentiyi Sil', 'Bu eklentiyi silmek istediğinize emin misiniz?', () => {
+                DB.plugins.splice(index, 1);
+                saveLegacyDB();
+                renderPlugins();
+                showToast('Eklenti silindi.', true);
+            });
+        };
+    });
+    
+    document.querySelectorAll('.plugin-enabled-toggle').forEach(toggle => {
+        toggle.onchange = (e) => {
+            const index = e.currentTarget.closest('[data-index]').dataset.index;
+            DB.plugins[index].enabled = e.currentTarget.checked;
+            saveLegacyDB();
+            showToast('Eklenti durumu güncellendi. Değişikliklerin etkili olması için sayfayı yenileyin.');
+        };
+    });
+}
+
+function loadPlugins() {
+    (DB.plugins || []).forEach(plugin => {
+        if (plugin.enabled && plugin.code) {
+            try {
+                // Eklenti kodunu bir fonksiyon içinde çalıştırarak global scope'u kirletmesini önle
+                const pluginFunction = new Function('PluginHost', 'DB', plugin.code);
+                pluginFunction(PluginHost, DB);
+                console.log(`Eklenti yüklendi: ${plugin.name}`);
+            } catch (e) {
+                console.error(`Eklenti yüklenirken hata oluştu: ${plugin.name}`, e);
+                showToast(`'${plugin.name}' eklentisi yüklenemedi.`, true);
+            }
+        }
+    });
+}
+
 
 // --- UYGULAMAYI BAŞLAT ---
 handleAuthStateChange();
